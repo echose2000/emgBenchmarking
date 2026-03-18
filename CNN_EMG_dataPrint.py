@@ -176,7 +176,11 @@ def main(config_args=None):
     hooks.register_hook("initialize_data", data_initializer.initialize_data)
     X, Y, label = hooks.call_hook("initialize_data")
 
-    print(X, Y, label)
+
+
+    torch.save(X, "/kaggle/working/X.pt")
+    torch.save(Y, "/kaggle/working/Y.pt")
+    torch.save(label, "/kaggle/working/label.pt")
 
 def use_config(config_args):
     """
