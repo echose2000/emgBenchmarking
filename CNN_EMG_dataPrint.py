@@ -176,13 +176,7 @@ def main(config_args=None):
     hooks.register_hook("initialize_data", data_initializer.initialize_data)
     X, Y, label = hooks.call_hook("initialize_data")
 
-    data_splitter = Data_Splitter(env)
-    hooks.register_hook("split_data", data_splitter.split_data)
-    hooks.call_hook("split_data", X, Y, label)
-
-    run_model = Run_Model(env)
-    hooks.register_hook("run_model", run_model.run_model)
-    hooks.call_hook("run_model", X, Y, label)
+    print(X, Y, label)
 
 def use_config(config_args):
     """
