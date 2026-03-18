@@ -178,9 +178,8 @@ def main(config_args=None):
 
 
 
-    torch.save(X, "/kaggle/working/X.pt")
-    torch.save(Y, "/kaggle/working/Y.pt")
-    torch.save(label, "/kaggle/working/label.pt")
+    torch.save(X.data, "/kaggle/working/X.pt")
+    torch.save(Y.data, "/kaggle/working/Y.pt")
 
 def use_config(config_args):
     """
