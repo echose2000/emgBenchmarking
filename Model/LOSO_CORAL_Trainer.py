@@ -452,6 +452,9 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         # Train and Validation Loop 
         self.train_and_validate(training_metrics, validation_metrics)
         
+        # 保存混淆矩阵和预测结果
+        self.save_and_print_results()
+        
         # Finetune Loop 
         if self.args.pretrain_and_finetune:
             self.pretrain_and_finetune(testing_metrics)
@@ -648,5 +651,249 @@ class LOSO_CORAL_Trainer(Model_Trainer):
             true_labels, test_predictions, self.gesture_labels,
             self.testrun_foldername, self.args, self.formatted_datetime, 'test'
         )
+        
+        torch.cuda.empty_cache()
+    
+    def save_and_print_results(self):
+        """
+        Save and print classification results including:
+        - Separate pkl files for test/validation/train sets
+        - Separate confusion matrix files
+        - All in a single 'result' directory per subject
+        """
+        import pickle
+        import os
+        
+        # 创建result目录
+        result_dir = f'{self.testrun_foldername}result_subject_{self.args.leftout_subject}/'
+        os.makedirs(result_dir, exist_ok=True)
+        
+        print("\n" + "="*70)
+        print(f"保存结果到: {result_dir}")
+        print("="*70)
+        
+        self.model.eval()
+        
+        # ===== TEST SET =====
+        print("\n[TEST SET]")
+        with torch.no_grad():
+            test_predictions = []
+            test_features = []
+            for batch_data in tqdm(self.test_loader, desc="测试集预测", leave=False):
+                if len(batch_data) == 3:
+                    X_batch, Y_batch, _ = batch_data
+                else:
+                    X_batch, Y_batch = batch_data
+                
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                output, features = self.model(X_batch)
+                
+                if isinstance(output, dict):
+                    output = output['logits']
+                
+                preds = np.argmax(output.cpu().detach().numpy(), axis=1)
+                test_predictions.extend(preds)
+                test_features.extend(features.cpu().detach().numpy())
+        
+        test_predictions = np.array(test_predictions)
+        test_features = np.array(test_features)
+        true_test_labels = np.argmax(self.Y.test.cpu().detach().numpy(), axis=1)
+        test_conf_matrix = confusion_matrix(true_test_labels, test_predictions)
+        test_acc = (test_predictions == true_test_labels).sum() / len(true_test_labels)
+        
+        print(f"测试集准确率: {test_acc:.4f}")
+        print("测试集混淆矩阵:")
+        print(test_conf_matrix)
+        print("\n测试集分类报告:")
+        print(classification_report(true_test_labels, test_predictions))
+        
+        # 保存测试集pkl
+        test_pkl = {
+            'predictions': test_predictions,
+            'labels': true_test_labels,
+            'features': test_features,
+            'confusion_matrix': test_conf_matrix,
+            'accuracy': test_acc,
+            'gesture_labels': self.gesture_labels,
+        }
+        test_pkl_file = f'{result_dir}test_results.pkl'
+        with open(test_pkl_file, 'wb') as f:
+            pickle.dump(test_pkl, f)
+        print(f"✓ 测试集pkl已保存: {test_pkl_file}")
+        
+        # 保存测试集混淆矩阵图
+        self.utils.plot_confusion_matrix(
+            true_test_labels, test_predictions, self.gesture_labels,
+            result_dir, self.args, 'test', 'test_confusion_matrix'
+        )
+        
+        # ===== VALIDATION SET =====
+        print("\n[VALIDATION SET]")
+        with torch.no_grad():
+            val_predictions = []
+            val_features = []
+            for batch_data in tqdm(self.val_loader, desc="验证集预测", leave=False):
+                if len(batch_data) == 3:
+                    X_batch, Y_batch, _ = batch_data
+                else:
+                    X_batch, Y_batch = batch_data
+                
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                output, features = self.model(X_batch)
+                
+                if isinstance(output, dict):
+                    output = output['logits']
+                
+                preds = np.argmax(output.cpu().detach().numpy(), axis=1)
+                val_predictions.extend(preds)
+                val_features.extend(features.cpu().detach().numpy())
+        
+        val_predictions = np.array(val_predictions)
+        val_features = np.array(val_features)
+        true_val_labels = np.argmax(self.Y.validation.cpu().detach().numpy(), axis=1)
+        val_conf_matrix = confusion_matrix(true_val_labels, val_predictions)
+        val_acc = (val_predictions == true_val_labels).sum() / len(true_val_labels)
+        
+        print(f"验证集准确率: {val_acc:.4f}")
+        print("验证集混淆矩阵:")
+        print(val_conf_matrix)
+        print("\n验证集分类报告:")
+        print(classification_report(true_val_labels, val_predictions))
+        
+        # 保存验证集pkl
+        val_pkl = {
+            'predictions': val_predictions,
+            'labels': true_val_labels,
+            'features': val_features,
+            'confusion_matrix': val_conf_matrix,
+            'accuracy': val_acc,
+            'gesture_labels': self.gesture_labels,
+        }
+        val_pkl_file = f'{result_dir}validation_results.pkl'
+        with open(val_pkl_file, 'wb') as f:
+            pickle.dump(val_pkl, f)
+        print(f"✓ 验证集pkl已保存: {val_pkl_file}")
+        
+        # 保存验证集混淆矩阵图
+        self.utils.plot_confusion_matrix(
+            true_val_labels, val_predictions, self.gesture_labels,
+            result_dir, self.args, 'validation', 'validation_confusion_matrix'
+        )
+        
+        # ===== TRAINING SET =====
+        print("\n[TRAINING SET]")
+        self.train_loader_unshuffled = DataLoader(
+            self.train_dataset,
+            batch_size=self.args.batch_size,
+            num_workers=multiprocessing.cpu_count()//8,
+            worker_init_fn=self.utils.seed_worker,
+            pin_memory=True,
+            drop_last=False
+        )
+        
+        with torch.no_grad():
+            train_predictions = []
+            train_features = []
+            for batch_data in tqdm(self.train_loader_unshuffled, desc="训练集预测", leave=False):
+                if len(batch_data) == 3:
+                    X_batch, Y_batch, _ = batch_data
+                else:
+                    X_batch, Y_batch = batch_data
+                
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                output, features = self.model(X_batch)
+                
+                if isinstance(output, dict):
+                    output = output['logits']
+                
+                preds = np.argmax(output.cpu().detach().numpy(), axis=1)
+                train_predictions.extend(preds)
+                train_features.extend(features.cpu().detach().numpy())
+        
+        train_predictions = np.array(train_predictions)
+        train_features = np.array(train_features)
+        true_train_labels = np.argmax(self.Y.train.cpu().detach().numpy(), axis=1)
+        train_conf_matrix = confusion_matrix(true_train_labels, train_predictions)
+        train_acc = (train_predictions == true_train_labels).sum() / len(true_train_labels)
+        
+        print(f"训练集准确率: {train_acc:.4f}")
+        print("训练集混淆矩阵:")
+        print(train_conf_matrix)
+        
+        # 保存训练集pkl
+        train_pkl = {
+            'predictions': train_predictions,
+            'labels': true_train_labels,
+            'features': train_features,
+            'confusion_matrix': train_conf_matrix,
+            'accuracy': train_acc,
+            'gesture_labels': self.gesture_labels,
+        }
+        train_pkl_file = f'{result_dir}train_results.pkl'
+        with open(train_pkl_file, 'wb') as f:
+            pickle.dump(train_pkl, f)
+        print(f"✓ 训练集pkl已保存: {train_pkl_file}")
+        
+        # 保存训练集混淆矩阵图
+        self.utils.plot_confusion_matrix(
+            true_train_labels, train_predictions, self.gesture_labels,
+            result_dir, self.args, 'train', 'train_confusion_matrix'
+        )
+        
+        # ===== 总结报告 =====
+        summary_txt = f'{result_dir}summary.txt'
+        with open(summary_txt, 'w') as f:
+            f.write("="*70 + "\n")
+            f.write(f"LOSO CORAL 训练结果总结 - Subject {self.args.leftout_subject}\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write(f"数据集: {self.args.dataset}\n")
+            f.write(f"模型: {self.model_name}\n")
+            f.write(f"训练方法: LOSO + CORAL + Prototype Loss\n")
+            f.write(f"随机种子: {self.args.seed}\n")
+            f.write(f"训练轮数: {self.num_epochs}\n")
+            f.write(f"批大小: {self.args.batch_size}\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("准确率统计\n")
+            f.write("="*70 + "\n")
+            f.write(f"训练集准确率: {train_acc:.4f}\n")
+            f.write(f"验证集准确率: {val_acc:.4f}\n")
+            f.write(f"测试集准确率: {test_acc:.4f}\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("测试集详细报告\n")
+            f.write("="*70 + "\n")
+            f.write("混淆矩阵:\n")
+            f.write(str(test_conf_matrix) + "\n\n")
+            f.write(classification_report(true_test_labels, test_predictions) + "\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("验证集详细报告\n")
+            f.write("="*70 + "\n")
+            f.write("混淆矩阵:\n")
+            f.write(str(val_conf_matrix) + "\n\n")
+            f.write(classification_report(true_val_labels, val_predictions) + "\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("训练集详细报告\n")
+            f.write("="*70 + "\n")
+            f.write("混淆矩阵:\n")
+            f.write(str(train_conf_matrix) + "\n\n")
+        
+        print(f"✓ 总结报告已保存: {summary_txt}")
+        
+        print("\n" + "="*70)
+        print(f"✓ 所有结果已保存到: {result_dir}")
+        print("="*70)
+        print(f"\n目录结构:")
+        print(f"  {result_dir}")
+        print(f"  ├─ train_results.pkl")
+        print(f"  ├─ validation_results.pkl")
+        print(f"  ├─ test_results.pkl")
+        print(f"  ├─ train_confusion_matrix.png")
+        print(f"  ├─ validation_confusion_matrix.png")
+        print(f"  ├─ test_confusion_matrix.png")
+        print(f"  └─ summary.txt")
         
         torch.cuda.empty_cache()
