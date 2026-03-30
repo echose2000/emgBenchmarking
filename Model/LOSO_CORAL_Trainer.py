@@ -340,6 +340,9 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         self.set_loaders()  # Custom loaders for LOSO
         self.set_criterion()
         
+        # Initialize global statistics AFTER creating data loaders
+        self._initialize_global_statistics()
+        
         # Print loss weights
         print(f"\n{'='*70}")
         print(f"LOSO CORAL Loss Weights Configuration")
@@ -372,9 +375,6 @@ class LOSO_CORAL_Trainer(Model_Trainer):
             ema_alpha=0.9,
             device=self.device
         )
-        
-        # Initialize with global training set statistics
-        self._initialize_global_statistics()
     
     def set_param_requires_grad(self):
         """Set which parameters require grad"""
