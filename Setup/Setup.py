@@ -145,6 +145,10 @@ class Setup():
         # Add argument for cutting down amount of total data for training subjects
         parser.add_argument('--proportion_data_from_training_subjects', type=float, help='proportion of data from training subjects to use. Set to 1.0 by default.', default=1.0)
         parser.add_argument('--target_normalize_subject', type=int, help='number of subject that is left out for target normalization, starting from subject 1', default=0)
+        # Add argument for CORAL loss weight in LOSO_CORAL training
+        parser.add_argument('--lambda_coral', type=float, help='weight for CORAL loss in LOSO_CORAL training. Set to 0.1 by default.', default=0.1)
+        # Add argument for prototype loss weight in LOSO_CORAL training
+        parser.add_argument('--lambda_prototype', type=float, help='weight for prototype loss in LOSO_CORAL training. Set to 0.5 by default.', default=0.5)
 
         args = parser.parse_args()
         self.args = args

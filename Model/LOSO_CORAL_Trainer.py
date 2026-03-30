@@ -325,9 +325,9 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         # Subject statistics memory will be initialized in setup_model
         self.subject_stats_memory = None
         
-        # Loss weights
-        self.lambda1 = 0.01  # CORAL loss weight
-        self.lambda2 = 1.0  # Prototype loss weight
+        # Loss weights (can be modified via command line arguments)
+        self.lambda1 = self.args.lambda_coral  # CORAL loss weight
+        self.lambda2 = self.args.lambda_prototype  # Prototype loss weight
     
     def setup_model(self):
         """Set up all model parameters for the run."""
@@ -338,6 +338,15 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         super().set_resize_transform()
         self.set_loaders()  # Custom loaders for LOSO
         self.set_criterion()
+        
+        # Print loss weights
+        print(f"\n{'='*70}")
+        print(f"LOSO CORAL Loss Weights Configuration")
+        print(f"{'='*70}")
+        print(f"CORAL loss weight (lambda1): {self.lambda1}")
+        print(f"Prototype loss weight (lambda2): {self.lambda2}")
+        print(f"Total loss = CE + {self.lambda1} × CORAL + {self.lambda2} × Prototype")
+        print(f"{'='*70}\n")
         
         super().start_pretrain_run()
         super().set_model_to_device()
