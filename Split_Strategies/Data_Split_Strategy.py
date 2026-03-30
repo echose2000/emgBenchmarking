@@ -152,18 +152,49 @@ class Data_Split_Strategy():
         X_aligned = X_normalized * sigma_support + mu_support
 
         # Assign back: set test to aligned queries and keep support if needed
-        self.X.test_support = np.array(X_support)
-        self.X.test_query = X_query
-        self.X.test = X_aligned.astype(self.X.test.dtype)
+        # Preserve original types (numpy or torch) and device/dtype for tensors
+        original_X_test = getattr(self.X, 'test', None)
 
-        # Also store labels for support/query
-        self.Y.test_support = np.array(Y_support)
-        self.Y.test_query = np.array(Y_query)
-        self.Y.test = np.array(self.Y.test)  # keep as before
+        # helper to convert numpy array back to original type
+        def _to_original_type(original, arr_np):
+            if original is None:
+                return arr_np
+            # If original is a torch tensor, convert numpy -> torch with same dtype/device
+            if isinstance(original, torch.Tensor):
+                torch_to_np = {
+                    torch.float16: np.float16,
+                    torch.float32: np.float32,
+                    torch.float64: np.float64,
+                    torch.int64: np.int64,
+                    torch.int32: np.int32,
+                    torch.uint8: np.uint8,
+                    torch.int16: np.int16,
+                }
+                npdtype = torch_to_np.get(original.dtype, np.float32)
+                return torch.from_numpy(arr_np.astype(npdtype)).to(device=original.device, dtype=original.dtype)
+            # If original has a dtype attribute (e.g., numpy array), try astype to match
+            if hasattr(original, 'dtype'):
+                try:
+                    return arr_np.astype(original.dtype)
+                except Exception:
+                    return arr_np
+            return arr_np
 
-        self.label.test_support = np.array(label_support)
-        self.label.test_query = np.array(label_query)
-        self.label.test = np.array(self.label.test)
+        self.X.test_support = _to_original_type(original_X_test, np.array(X_support))
+        self.X.test_query = _to_original_type(original_X_test, X_query)
+        self.X.test = _to_original_type(original_X_test, X_aligned)
+
+        # Also store labels for support/query (keep them as numpy or convert to torch if original was)
+        original_Y_test = getattr(self.Y, 'test', None)
+        original_label_test = getattr(self.label, 'test', None)
+
+        self.Y.test_support = _to_original_type(original_Y_test, np.array(Y_support))
+        self.Y.test_query = _to_original_type(original_Y_test, np.array(Y_query))
+        self.Y.test = _to_original_type(original_Y_test, np.array(self.Y.test))  # keep as before
+
+        self.label.test_support = _to_original_type(original_label_test, np.array(label_support))
+        self.label.test_query = _to_original_type(original_label_test, np.array(label_query))
+        self.label.test = _to_original_type(original_label_test, np.array(self.label.test))
 
     def all_sets_to_tensor(self):
         self.X.all_sets_to_tensor()
