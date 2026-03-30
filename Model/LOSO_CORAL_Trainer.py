@@ -483,6 +483,8 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         """
         print("\n[Initializing] Global training set statistics for CORAL alignment...")
         
+        # Move model to device first
+        self.model = self.model.to(self.device)
         self.model.eval()
         global_features = []
         
