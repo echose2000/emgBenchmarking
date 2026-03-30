@@ -28,6 +28,9 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
             self.adjust_sets_for_leave_out_subj()
 
         super().test_from_validation()
+        # Optionally split test into support/query and align query to support stats
+        support_prop = getattr(self.args, 'support_proportion', 0.2)
+        super().split_test_into_support_and_align(support_proportion=support_prop)
         super().print_set_shapes()
         super().all_sets_to_tensor()
 

@@ -122,6 +122,8 @@ class Setup():
         parser.add_argument('--train_test_split_for_time_series', type=utils.str2bool, help='whether or not to use data split for time series. Set to False by default.', default=False)
         # Add argument for proportion of left-out-subject data to use for transfer learning
         parser.add_argument('--proportion_transfer_learning_from_leftout_subject', type=float, help='proportion of left-out-subject data to use for transfer learning. Set to 0.25 by default.', default=0.25)
+        # Add argument for proportion of test set to use as support when splitting test into support/query
+        parser.add_argument('--support_proportion', type=float, help='proportion of test set to use as support when splitting test into support/query. Set to 0.2 by default.', default=0.2)
         # Add argument for amount for reducing number of data to generate for transfer learning
         parser.add_argument('--reduce_data_for_transfer_learning', type=int, help='amount for reducing number of data to generate for transfer learning. Set to 1 by default.', default=1)
         # Add argument for whether to do leave-one-session-out

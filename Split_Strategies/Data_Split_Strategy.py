@@ -4,6 +4,7 @@ Data_Split_Strategy.py
 - Acts as a wrapper for X, Y, and label objects. Repeats function calls for each object.
 """
 from .cross_validation_utilities import train_test_split as tts # custom train test split to split stratified without shuffling
+import numpy as np
 import torch 
 class Data_Split_Strategy():
     """
@@ -84,6 +85,85 @@ class Data_Split_Strategy():
             force_regression=self.args.force_regression,
             transition_classifier=self.args.transition_classifier
         )
+
+    def split_test_into_support_and_align(self, support_proportion=0.2):
+        """
+        Split the current test set into support and query according to support_proportion,
+        then align the query samples to the support statistics.
+
+        Formula implemented per request:
+            Xnormalized = (Xquery - mu_target) / sigma_target
+            Xaligned = Xnormalized * sigma_support + mu_support
+
+        Uses the pre-split validation+test (target domain) statistics as mu_target/sigma_target
+        (i.e., concatenation of current self.test and self.validation) and computes support
+        statistics from the sampled support subset.
+        """
+
+        # If there's no test data, nothing to do
+        if not hasattr(self.X, 'test') or self.X.test is None:
+            return
+
+        # Determine proportion for support; support_proportion is fraction of test to keep as support
+        prop = support_proportion
+
+        # Use custom train_test_split to split self.X.test into support and query
+        X_support, X_query, Y_support, Y_query, label_support, label_query = tts.train_test_split(
+            self.X.test,
+            self.Y.test,
+            test_size=1.0 - prop,
+            stratify=self.label.test,
+            random_state=self.args.seed,
+            shuffle=(not self.args.train_test_split_for_time_series),
+            force_regression=self.args.force_regression,
+            transition_classifier=self.args.transition_classifier
+        )
+
+        # Compute target statistics from the training set (source of target domain statistics)
+        # If training set is a torch tensor, convert to numpy
+        if hasattr(self.X, 'train') and self.X.train is not None:
+            if isinstance(self.X.train, torch.Tensor):
+                target_all = self.X.train.cpu().detach().numpy()
+            else:
+                target_all = np.array(self.X.train)
+        else:
+            # fallback: use test + validation if train not available
+            try:
+                target_all = np.concatenate((self.X.test, self.X.validation), axis=0)
+            except Exception:
+                target_all = np.array(self.X.test)
+
+        # Compute per-pixel/channel mean and std across samples
+        mu_target = np.mean(target_all, axis=0)
+        sigma_target = np.std(target_all, axis=0)
+
+        # Compute support stats
+        mu_support = np.mean(np.array(X_support), axis=0)
+        sigma_support = np.std(np.array(X_support), axis=0)
+
+        # Avoid divide by zero
+        eps = 1e-6
+        sigma_target = np.where(sigma_target == 0, eps, sigma_target)
+        sigma_support = np.where(sigma_support == 0, eps, sigma_support)
+
+        # Align query samples
+        X_query = np.array(X_query)
+        X_normalized = (X_query - mu_target) / sigma_target
+        X_aligned = X_normalized * sigma_support + mu_support
+
+        # Assign back: set test to aligned queries and keep support if needed
+        self.X.test_support = np.array(X_support)
+        self.X.test_query = X_query
+        self.X.test = X_aligned.astype(self.X.test.dtype)
+
+        # Also store labels for support/query
+        self.Y.test_support = np.array(Y_support)
+        self.Y.test_query = np.array(Y_query)
+        self.Y.test = np.array(self.Y.test)  # keep as before
+
+        self.label.test_support = np.array(label_support)
+        self.label.test_query = np.array(label_query)
+        self.label.test = np.array(self.label.test)
 
     def all_sets_to_tensor(self):
         self.X.all_sets_to_tensor()
