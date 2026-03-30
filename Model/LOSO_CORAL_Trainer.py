@@ -487,7 +487,13 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         global_features = []
         
         with torch.no_grad():
-            for X_batch, _ in tqdm(self.train_loader, desc="Computing global statistics", leave=False):
+            for batch_data in tqdm(self.train_loader, desc="Computing global statistics", leave=False):
+                # Handle 3-tuple (X_batch, Y_batch, subject_ids) from CustomDatasetWithSubjectID
+                if len(batch_data) == 3:
+                    X_batch, _, _ = batch_data
+                else:
+                    X_batch, _ = batch_data
+                    
                 X_batch = X_batch.to(self.device).to(torch.float32)
                 _, feat = self.model(X_batch)
                 global_features.append(feat.cpu().detach().numpy())
