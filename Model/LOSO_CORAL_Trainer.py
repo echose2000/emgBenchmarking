@@ -326,8 +326,8 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         self.subject_stats_memory = None
         
         # Loss weights
-        self.lambda1 = 0.1  # CORAL loss weight
-        self.lambda2 = 0.5  # Prototype loss weight
+        self.lambda1 = 0.01  # CORAL loss weight
+        self.lambda2 = 1.0  # Prototype loss weight
     
     def setup_model(self):
         """Set up all model parameters for the run."""
