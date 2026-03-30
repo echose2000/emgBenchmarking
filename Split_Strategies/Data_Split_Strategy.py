@@ -188,13 +188,14 @@ class Data_Split_Strategy():
         original_Y_test = getattr(self.Y, 'test', None)
         original_label_test = getattr(self.label, 'test', None)
 
+        # Y and label: set support/query and update the test set to be the query subset
         self.Y.test_support = _to_original_type(original_Y_test, np.array(Y_support))
         self.Y.test_query = _to_original_type(original_Y_test, np.array(Y_query))
-        self.Y.test = _to_original_type(original_Y_test, np.array(self.Y.test))  # keep as before
+        self.Y.test = _to_original_type(original_Y_test, np.array(Y_query))
 
         self.label.test_support = _to_original_type(original_label_test, np.array(label_support))
         self.label.test_query = _to_original_type(original_label_test, np.array(label_query))
-        self.label.test = _to_original_type(original_label_test, np.array(self.label.test))
+        self.label.test = _to_original_type(original_label_test, np.array(label_query))
 
     def all_sets_to_tensor(self):
         self.X.all_sets_to_tensor()
