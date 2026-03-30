@@ -149,6 +149,8 @@ class Setup():
         parser.add_argument('--lambda_coral', type=float, help='weight for CORAL loss in LOSO_CORAL training. Set to 0.1 by default.', default=0.1)
         # Add argument for prototype loss weight in LOSO_CORAL training
         parser.add_argument('--lambda_prototype', type=float, help='weight for prototype loss in LOSO_CORAL training. Set to 0.5 by default.', default=0.5)
+        # Add argument for few-shot adaptation ratio
+        parser.add_argument('--adapt_ratio', type=float, help='proportion of validation and test data to use for few-shot adaptation. Set to 0.0 (disabled) by default.', default=0.0)
 
         args = parser.parse_args()
         self.args = args

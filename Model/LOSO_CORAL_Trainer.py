@@ -25,6 +25,7 @@ import torch.nn.functional as F
 import math
 import copy
 import random
+import os
 
 
 class ResNet18WithFeatures(nn.Module):
@@ -463,6 +464,10 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         
         # 保存混淆矩阵和预测结果
         self.save_and_print_results()
+        
+        # Few-shot adaptation (if enabled)
+        if self.args.adapt_ratio > 0.0:
+            self.adaptive_test_with_few_shot()
         
         # Finetune Loop 
         if self.args.pretrain_and_finetune:
@@ -906,3 +911,296 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         print(f"  └─ summary.txt")
         
         torch.cuda.empty_cache()
+    
+    def adaptive_test_with_few_shot(self):
+        """
+        Few-shot + Transductive Domain Adaptation for Subject 0 (test subject).
+        
+        Key steps:
+        1. Sample adapt_ratio proportion from validation and test sets
+        2. Ensure equal size by taking minimum
+        3. Estimate Subject 0 distribution using support set
+        4. Align test features using computed statistics
+        
+        Returns:
+            dict with adaptation results
+        """
+        import pickle
+        
+        if self.args.adapt_ratio <= 0.0:
+            print("\n[ADAPT_RATIO = 0.0] Few-shot adaptation disabled.")
+            return None
+        
+        print("\n" + "="*70)
+        print(f"Few-shot + Transductive Domain Adaptation")
+        print(f"Adaptation Ratio: {self.args.adapt_ratio}")
+        print("="*70)
+        
+        # ===== Step 1: Compute training set distribution =====
+        print("\n[Step 1] Computing training set distribution (Subject 1-9)...")
+        self.model.eval()
+        
+        train_features_all = []
+        with torch.no_grad():
+            for batch_data in tqdm(self.train_loader, desc="Training features", leave=False):
+                if len(batch_data) == 3:
+                    X_batch, _, _ = batch_data
+                else:
+                    X_batch, _ = batch_data
+                
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                _, features = self.model(X_batch)
+                train_features_all.append(features.cpu().detach().numpy())
+        
+        train_features_all = np.concatenate(train_features_all, axis=0)
+        mean_train = train_features_all.mean(axis=0)  # [512]
+        var_train = np.var(train_features_all, axis=0)  # [512] diagonal variance
+        
+        print(f"  Train features shape: {train_features_all.shape}")
+        print(f"  Mean shape: {mean_train.shape}")
+        print(f"  Var shape: {var_train.shape}")
+        
+        # ===== Step 2: Sample support set from val and test =====
+        print(f"\n[Step 2] Building support set with adapt_ratio={self.args.adapt_ratio}...")
+        
+        num_val = len(self.Y.validation)
+        num_test = len(self.Y.test)
+        
+        val_support_size = max(1, int(num_val * self.args.adapt_ratio))
+        test_support_size = max(1, int(num_test * self.args.adapt_ratio))
+        
+        # Ensure equal sizes
+        support_size = min(val_support_size, test_support_size)
+        
+        print(f"  Val set size: {num_val}, support_size: {val_support_size}")
+        print(f"  Test set size: {num_test}, support_size: {test_support_size}")
+        print(f"  Final support_size (min): {support_size}")
+        
+        # Random sampling
+        np.random.seed(self.args.seed)
+        val_indices_all = np.arange(num_val)
+        test_indices_all = np.arange(num_test)
+        
+        val_support_indices = np.random.choice(val_indices_all, size=support_size, replace=False)
+        test_support_indices = np.random.choice(test_indices_all, size=support_size, replace=False)
+        
+        print(f"  Sampled {support_size} from validation (indices: {val_support_indices[:5]}...)")
+        print(f"  Sampled {support_size} from test (indices: {test_support_indices[:5]}...)")
+        
+        # ===== Step 3: Extract features from support set =====
+        print(f"\n[Step 3] Extracting support set features...")
+        
+        support_features = []
+        
+        # Process validation support using DataLoader
+        val_support_dataset = self.CustomDataset(
+            self.X.validation[val_support_indices], 
+            self.Y.validation[val_support_indices], 
+            transform=self.resize_transform
+        )
+        val_support_loader = DataLoader(
+            val_support_dataset,
+            batch_size=32,
+            num_workers=0,
+            pin_memory=True,
+            shuffle=False
+        )
+        
+        with torch.no_grad():
+            for X_batch, _ in val_support_loader:
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                _, feat = self.model(X_batch)
+                support_features.append(feat.cpu().detach().numpy())
+        
+        # Process test support using DataLoader
+        test_support_dataset = self.CustomDataset(
+            self.X.test[test_support_indices], 
+            self.Y.test[test_support_indices], 
+            transform=self.resize_transform
+        )
+        test_support_loader = DataLoader(
+            test_support_dataset,
+            batch_size=32,
+            num_workers=0,
+            pin_memory=True,
+            shuffle=False
+        )
+        
+        with torch.no_grad():
+            for X_batch, _ in test_support_loader:
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                _, feat = self.model(X_batch)
+                support_features.append(feat.cpu().detach().numpy())
+        
+        support_features = np.concatenate(support_features, axis=0)
+        
+        # ===== Step 4: Estimate Subject 0 distribution =====
+        print(f"\n[Step 4] Computing Subject 0 distribution from support set...")
+        
+        mean_0 = support_features.mean(axis=0)  # [512]
+        var_0 = np.var(support_features, axis=0)  # [512]
+        
+        print(f"  Support set features shape: {support_features.shape}")
+        print(f"  Subject 0 mean norm: {np.linalg.norm(mean_0):.4f}")
+        print(f"  Subject 0 var mean: {var_0.mean():.6f}")
+        
+        # ===== Step 5: Test with feature alignment =====
+        print(f"\n[Step 5] Testing with feature alignment...")
+        
+        # Create test set excluding test_support_indices
+        test_indices_remain = np.setdiff1d(test_indices_all, test_support_indices)
+        
+        print(f"  Original test set size: {num_test}")
+        print(f"  Test support removed: {support_size}")
+        print(f"  Remaining test set size: {len(test_indices_remain)}")
+        
+        # Create data loader for remaining test samples
+        test_remain_dataset = self.CustomDataset(
+            self.X.test[test_indices_remain], 
+            self.Y.test[test_indices_remain], 
+            transform=self.resize_transform
+        )
+        test_remain_loader = DataLoader(
+            test_remain_dataset,
+            batch_size=32,
+            num_workers=0,
+            pin_memory=True,
+            shuffle=False
+        )
+        
+        test_predictions = []
+        test_features_aligned = []
+        test_true_labels = []
+        
+        eps = 1e-5
+        
+        with torch.no_grad():
+            batch_idx = 0
+            for X_batch, Y_batch in tqdm(test_remain_loader, desc="Testing with alignment", leave=False):
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                Y_batch = Y_batch.to(self.device).to(torch.float32)
+                Y_batch_long = torch.argmax(Y_batch, dim=1)
+                
+                # Forward to get features
+                output, feat = self.model(X_batch)
+                
+                if isinstance(output, dict):
+                    output = output['logits']
+                
+                # Feature alignment for each sample in batch
+                feat_np = feat.cpu().detach().numpy()  # [batch_size, 512]
+                
+                for i in range(len(feat_np)):
+                    feat_sample = feat_np[i]  # [512]
+                    
+                    # Align: (feat - mean_0) / sqrt(var_0 + eps) * sqrt(var_train + eps) + mean_train
+                    feat_centered = feat_sample - mean_0
+                    feat_normalized = feat_centered / np.sqrt(var_0 + eps)
+                    feat_aligned = feat_normalized * np.sqrt(var_train + eps) + mean_train
+                    
+                    # Convert back to tensor and pass through classifier
+                    feat_aligned_tensor = torch.tensor(feat_aligned, dtype=torch.float32, device=self.device).unsqueeze(0)
+                    logits_aligned = self.model.classifier(feat_aligned_tensor)
+                    
+                    pred = np.argmax(logits_aligned.cpu().detach().numpy()[0])
+                    true_label = Y_batch_long[i].item()
+                    
+                    test_predictions.append(pred)
+                    test_features_aligned.append(feat_aligned)
+                    test_true_labels.append(true_label)
+                
+                batch_idx += 1
+        
+        test_predictions = np.array(test_predictions)
+        test_features_aligned = np.array(test_features_aligned)
+        test_true_labels = np.array(test_true_labels)
+        
+        # ===== Step 6: Compute metrics =====
+        print(f"\n[Step 6] Computing metrics...")
+        
+        test_acc_adapted = (test_predictions == test_true_labels).sum() / len(test_true_labels)
+        test_conf_matrix = confusion_matrix(test_true_labels, test_predictions)
+        
+        print(f"\n{'='*70}")
+        print(f"Few-shot Adaptation Results (Subject {self.args.leftout_subject})")
+        print(f"{'='*70}")
+        print(f"Support set size: {support_size * 2} (val: {support_size}, test: {support_size})")
+        print(f"Test samples evaluated: {len(test_true_labels)}")
+        print(f"Test Accuracy (with alignment): {test_acc_adapted:.4f}")
+        print(f"{'='*70}")
+        
+        print("\nTest Confusion Matrix:")
+        print(test_conf_matrix)
+        print("\nTest Classification Report:")
+        print(classification_report(test_true_labels, test_predictions))
+        
+        # ===== Save results =====
+        result_dir = f'{self.testrun_foldername}result_subject_{self.args.leftout_subject}_adapt/'
+        os.makedirs(result_dir, exist_ok=True)
+        
+        adapt_pkl = {
+            'adapt_ratio': self.args.adapt_ratio,
+            'support_size': support_size,
+            'val_support_indices': val_support_indices,
+            'test_support_indices': test_support_indices,
+            'test_remaining_indices': test_indices_remain,
+            'mean_train': mean_train,
+            'var_train': var_train,
+            'mean_0': mean_0,
+            'var_0': var_0,
+            'predictions': test_predictions,
+            'labels': test_true_labels,
+            'features_aligned': test_features_aligned,
+            'accuracy': test_acc_adapted,
+            'confusion_matrix': test_conf_matrix,
+            'gesture_labels': self.gesture_labels,
+        }
+        
+        adapt_pkl_file = f'{result_dir}adaptation_results.pkl'
+        with open(adapt_pkl_file, 'wb') as f:
+            pickle.dump(adapt_pkl, f)
+        
+        print(f"\n✓ Adaptation results saved to: {adapt_pkl_file}")
+        
+        # Save confusion matrix plot
+        self.utils.plot_confusion_matrix(
+            test_true_labels, test_predictions, self.gesture_labels,
+            result_dir, self.args, 'test_adapted', 'test_adapted_confusion_matrix'
+        )
+        
+        # Save summary
+        summary_txt = f'{result_dir}adaptation_summary.txt'
+        with open(summary_txt, 'w') as f:
+            f.write("="*70 + "\n")
+            f.write(f"Few-shot + Transductive Adaptation Results\n")
+            f.write(f"Subject {self.args.leftout_subject}\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write(f"Adaptation Ratio: {self.args.adapt_ratio}\n")
+            f.write(f"Support Set Size: {support_size * 2} (val: {support_size}, test: {support_size})\n")
+            f.write(f"Test Samples Evaluated: {len(test_true_labels)}\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("Statistics\n")
+            f.write("="*70 + "\n")
+            f.write(f"Training Mean norm: {np.linalg.norm(mean_train):.4f}\n")
+            f.write(f"Training Var mean: {var_train.mean():.6f}\n")
+            f.write(f"Subject 0 Mean norm: {np.linalg.norm(mean_0):.4f}\n")
+            f.write(f"Subject 0 Var mean: {var_0.mean():.6f}\n\n")
+            
+            f.write("="*70 + "\n")
+            f.write("Metrics\n")
+            f.write("="*70 + "\n")
+            f.write(f"Test Accuracy (with alignment): {test_acc_adapted:.4f}\n\n")
+            
+            f.write("Confusion Matrix:\n")
+            f.write(str(test_conf_matrix) + "\n\n")
+            f.write(classification_report(test_true_labels, test_predictions) + "\n")
+        
+        print(f"✓ Adaptation summary saved to: {summary_txt}")
+        
+        print(f"\n✓ All adaptation results saved to: {result_dir}\n")
+        
+        torch.cuda.empty_cache()
+        
+        return adapt_pkl
