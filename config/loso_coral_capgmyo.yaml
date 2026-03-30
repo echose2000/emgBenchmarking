@@ -1,0 +1,38 @@
+# Configuration for LOSO + CORAL training on CapgMyo dataset
+# This configuration uses the new LOSO_CORAL_Trainer which implements:
+# - Subject-level statistics memory (EMA updates)
+# - CORAL loss based on subject distributions  
+# - Prototype loss for metric learning
+# - Single subject per batch constraint
+
+# Dataset
+dataset: capgmyo
+preprocessing: spectrogram
+
+# Model architecture
+model: resnet18
+
+# Domain adaptation
+domain_generalization: CORAL
+leave_one_subject_out: True
+
+# Training hyperparameters
+epochs: 100
+batch_size: 64
+learning_rate: 0.0001
+
+# Loss weights (in LOSO_CORAL_Trainer)
+# final_loss = classification_loss + lambda1*coral_loss + lambda2*prototype_loss
+# lambda1 = 0.1 (CORAL loss weight)
+# lambda2 = 0.5 (Prototype loss weight)
+# EMA alpha = 0.9 (for subject statistics memory)
+
+# Training mode
+pretrain_and_finetune: False
+transfer_learning: False
+
+# Seed for reproducibility
+seed: 42
+
+# GPU
+gpu: 0

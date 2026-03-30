@@ -27,6 +27,7 @@ from Model.SVC_RF_Trainer import SVC_RF_Trainer
 from Model.IRM_CNN_Based_Trainer import IRM_CNN_Based_Trainer
 from Model.IRM_MLP_Based_Trainer import IRM_MLP_Based_Trainer
 from Model.CORAL_Trainer import CORAL_Trainer
+from Model.LOSO_CORAL_Trainer import LOSO_CORAL_Trainer
 
 class Run_Setup():
     """
@@ -157,7 +158,11 @@ class Run_Model():
                 if self.args.domain_generalization == "IRM":
                     model_trainer = IRM_CNN_Based_Trainer(X, Y, label, self.env)
                 elif self.args.domain_generalization == "CORAL":
-                    model_trainer = CORAL_Trainer(X, Y, label, self.env)
+                    # Use LOSO_CORAL_Trainer for LOSO + CORAL setting
+                    if self.args.leave_one_subject_out:
+                        model_trainer = LOSO_CORAL_Trainer(X, Y, label, self.env)
+                    else:
+                        model_trainer = CORAL_Trainer(X, Y, label, self.env)
                 else:
                     model_trainer = CNN_Trainer(X, Y, label, self.env)
 
