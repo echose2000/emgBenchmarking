@@ -372,6 +372,9 @@ class LOSO_CORAL_Trainer(Model_Trainer):
             ema_alpha=0.9,
             device=self.device
         )
+        
+        # Initialize with global training set statistics
+        self._initialize_global_statistics()
     
     def set_param_requires_grad(self):
         """Set which parameters require grad"""
@@ -473,6 +476,40 @@ class LOSO_CORAL_Trainer(Model_Trainer):
         if self.args.pretrain_and_finetune:
             self.pretrain_and_finetune(testing_metrics)
     
+    def _initialize_global_statistics(self):
+        """
+        Initialize subject statistics memory with global training set statistics.
+        This ensures CORAL loss is meaningful from the start of training.
+        """
+        print("\n[Initializing] Global training set statistics for CORAL alignment...")
+        
+        self.model.eval()
+        global_features = []
+        
+        with torch.no_grad():
+            for X_batch, _ in tqdm(self.train_loader, desc="Computing global statistics", leave=False):
+                X_batch = X_batch.to(self.device).to(torch.float32)
+                _, feat = self.model(X_batch)
+                global_features.append(feat.cpu().detach().numpy())
+        
+        global_features = np.concatenate(global_features, axis=0)
+        global_mean = global_features.mean(axis=0)  # [512]
+        global_centered = global_features - global_mean
+        global_cov = np.dot(global_centered.T, global_centered) / (len(global_features) - 1 + 1e-8)  # [512, 512]
+        
+        # Initialize all subjects with global statistics
+        global_mean_tensor = torch.tensor(global_mean, dtype=torch.float32, device=self.device)
+        global_cov_tensor = torch.tensor(global_cov, dtype=torch.float32, device=self.device)
+        
+        for subject_id in range(self.subject_stats_memory.num_subjects):
+            self.subject_stats_memory.mean[subject_id] = global_mean_tensor.clone()
+            self.subject_stats_memory.cov[subject_id] = global_cov_tensor.clone()
+            self.subject_stats_memory.updated[subject_id] = True
+        
+        print(f"  Global mean norm: {np.linalg.norm(global_mean):.4f}")
+        print(f"  Global cov Frobenius: {np.linalg.norm(global_cov):.4f}")
+        print(f"  ✓ All subjects initialized with global statistics\n")
+    
     def train_and_validate(self, training_metrics, validation_metrics):
         """Train and validation loop with CORAL and prototype losses"""
         
@@ -532,7 +569,9 @@ class LOSO_CORAL_Trainer(Model_Trainer):
                     loss_coral = self.coral_loss(batch_mean, batch_cov, target_mean, target_cov)
                     
                     # === Compute Prototype Loss ===
-                    loss_prototype = self.prototype_loss(features, Y_batch_long)
+                    # Proto Loss disabled due to instability in high-dimensional space
+                    # loss_prototype = self.prototype_loss(features, Y_batch_long)
+                    loss_prototype = torch.tensor(0.0, device=self.device, dtype=torch.float32)
                     
                     # === Total Loss ===
                     loss = loss_ce + self.lambda1 * loss_coral + self.lambda2 * loss_prototype
