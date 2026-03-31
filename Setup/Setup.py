@@ -130,8 +130,12 @@ class Setup():
         parser.add_argument('--one_subject_for_training_set_for_session_test', type=utils.str2bool, help='whether or not to use only the subject left out for training in leave out session test. Set to False by default.', default=False)
         # Add argument for pretraining on all data from other subjects, and fine-tuning on some data from left out subject
         parser.add_argument('--pretrain_and_finetune', type=utils.str2bool, help='whether or not to pretrain on all data from other subjects, and fine-tune on some data from left out subject. Set to False by default.', default=False)
+        # Add argument for whether or not to run pretraining stage
+        parser.add_argument('--run_pretraining', type=utils.str2bool, help='whether or not to run pretraining stage before finetuning. Set to True by default.', default=True)
         # Add argument for finetuning epochs
         parser.add_argument('--finetuning_epochs', type=int, help='number of epochs to fine-tune for. Set to 25 by default.', default=25)
+        # Optional: load a local checkpoint before finetuning
+        parser.add_argument('--finetune_from_checkpoint', type=str, help='path to local .pth checkpoint to load before finetuning. Set to empty by default.', default='')
         # Add argument for whether or not to turn on unlabeled domain adaptation
         parser.add_argument('--turn_on_unlabeled_domain_adaptation', type=utils.str2bool, help='whether or not to turn on unlabeled domain adaptation methods. Set to False by default.', default=False)
         # Add argument to specify algorithm to use for unlabeled domain adaptation

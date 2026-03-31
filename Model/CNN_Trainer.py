@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 import multiprocessing
 from sklearn.metrics import confusion_matrix, classification_report
 import wandb
+import os
 
 class CNN_Trainer(Model_Trainer):
     """
@@ -33,7 +34,10 @@ class CNN_Trainer(Model_Trainer):
         torch.backends.cudnn.benchmark = False
 
     def model_loop(self):
-        self.pretrain_model() 
+        if self.args.run_pretraining:
+            self.pretrain_model()
+        else:
+            print("[model_loop] Skipping pretraining stage (run_pretraining=False)")
         if self.args.pretrain_and_finetune:
             self.finetune_model()
         
@@ -233,6 +237,28 @@ class CNN_Trainer(Model_Trainer):
         """
         Start a new loop for finetuning. 
         """
+        ckpt_path = getattr(self.args, 'finetune_from_checkpoint', '')
+        if ckpt_path:
+            if not os.path.exists(ckpt_path):
+                raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+
+            checkpoint = torch.load(ckpt_path, map_location=self.device)
+            if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            elif isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            elif isinstance(checkpoint, dict) and all(torch.is_tensor(v) for v in checkpoint.values()):
+                state_dict = checkpoint
+            else:
+                raise ValueError(
+                    "Unsupported checkpoint format. Please provide a model checkpoint (.pth) that contains "
+                    "state_dict / model_state_dict or a raw state_dict."
+                )
+
+            missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+            print(f"[finetune] Loaded checkpoint: {ckpt_path}")
+            print(f"[finetune] Missing keys: {len(missing_keys)}, Unexpected keys: {len(unexpected_keys)}")
+
         # 微调阶段，只FC可训练
         self.set_param_requires_grad(is_finetune=True)
 
