@@ -44,7 +44,8 @@ class CNN_Trainer(Model_Trainer):
         super().set_pretrain_path()
         self.set_model()
         self.set_optimizer()
-        self.set_param_requires_grad()
+        # 预训练阶段，全部参数可训练
+        self.set_param_requires_grad(is_finetune=False)
         super().set_resize_transform()
         super().set_loaders()
         super().set_criterion()
@@ -130,25 +131,33 @@ class CNN_Trainer(Model_Trainer):
         # Print the total number of parameters
         print(f'Total number of parameters: {total_params}')
 
-    def set_param_requires_grad(self):
-        
-        # Freeze all parameters first (backbone/feature extractor)
-        for param in self.model.parameters():
-            param.requires_grad = False
-        
-        # Unfreeze only FC/classifier layer
-        for name, param in self.model.named_parameters():
-            if 'fc' in name or 'head' in name.lower():
+    def set_param_requires_grad(self, is_finetune=False):
+        """
+        控制参数是否可训练。
+        is_finetune=False: 全部参数可训练（预训练阶段）
+        is_finetune=True: 只FC可训练（微调阶段）
+        """
+        if not is_finetune:
+            # 全部参数可训练
+            for param in self.model.parameters():
                 param.requires_grad = True
-                print(f"Unfreezing: {name}")
-        
-        # Print parameter statistics
+            print("[set_param_requires_grad] 预训练：全部参数可训练")
+        else:
+            # 只FC可训练
+            for param in self.model.parameters():
+                param.requires_grad = False
+            for name, param in self.model.named_parameters():
+                if 'fc' in name or 'head' in name.lower():
+                    param.requires_grad = True
+                    print(f"Unfreezing: {name}")
+            print("[set_param_requires_grad] 微调：只FC可训练")
+        # 打印参数统计
         total_params = sum(p.numel() for p in self.model.parameters())
         trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         print(f"\n=== Model Parameter Statistics ===")
         print(f"Total parameters: {total_params:,}")
-        print(f"Trainable parameters (FC only): {trainable_params:,}")
-        print(f"Frozen parameters (Backbone): {total_params - trainable_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
+        print(f"Frozen parameters: {total_params - trainable_params:,}")
         print(f"Trainable ratio: {trainable_params/total_params*100:.2f}%\n")
 
     def set_optimizer(self):
@@ -224,6 +233,8 @@ class CNN_Trainer(Model_Trainer):
         """
         Start a new loop for finetuning. 
         """
+        # 微调阶段，只FC可训练
+        self.set_param_requires_grad(is_finetune=True)
 
         self.ft_run = wandb.init(name=self.wandb_runname+"_finetune", project=self.project_name) 
         ft_epochs = self.args.finetuning_epochs
@@ -382,8 +393,7 @@ class CNN_Trainer(Model_Trainer):
         wandb.save(f'self.model/self.modelParameters_{self.formatted_datetime}.pth')
 
         # Evaluate the self.model on the test set
-        ml_utils.evaluate_model_on_test_set(self.model, self.test_loader, self.
-        device, self.num_gestures, self.criterion, self.args, ft_testing_metrics)
+        ml_utils.evaluate_model_on_test_set(self.model, self.test_loader, self.device, self.num_gestures, self.criterion, self.args, ft_testing_metrics)
 
         if not self.args.force_regression:
             self.print_classification_metrics()
