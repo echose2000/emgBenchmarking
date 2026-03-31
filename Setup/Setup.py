@@ -134,6 +134,8 @@ class Setup():
         parser.add_argument('--run_pretraining', type=utils.str2bool, help='whether or not to run pretraining stage before finetuning. Set to True by default.', default=True)
         # Add argument for finetuning epochs
         parser.add_argument('--finetuning_epochs', type=int, help='number of epochs to fine-tune for. Set to 25 by default.', default=25)
+        # Add argument for freezing feature extractor during finetuning
+        parser.add_argument('--freeze_feature_extractor_during_finetune', type=utils.str2bool, help='whether or not to freeze feature extractor (train FC/head only) during finetuning. Set to True by default.', default=True)
         # Optional: load a local checkpoint before finetuning
         parser.add_argument('--finetune_from_checkpoint', type=str, help='path to local .pth checkpoint to load before finetuning. Set to empty by default.', default='')
         # Add argument for whether or not to turn on unlabeled domain adaptation

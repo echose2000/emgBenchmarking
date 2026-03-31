@@ -259,8 +259,13 @@ class CNN_Trainer(Model_Trainer):
             print(f"[finetune] Loaded checkpoint: {ckpt_path}")
             print(f"[finetune] Missing keys: {len(missing_keys)}, Unexpected keys: {len(unexpected_keys)}")
 
-        # 微调阶段，只FC可训练
-        self.set_param_requires_grad(is_finetune=True)
+        # 微调阶段可配置：只训练FC(head)或全参数训练
+        if self.args.freeze_feature_extractor_during_finetune:
+            self.set_param_requires_grad(is_finetune=True)
+            print("[finetune] freeze_feature_extractor_during_finetune=True -> train FC/head only")
+        else:
+            self.set_param_requires_grad(is_finetune=False)
+            print("[finetune] freeze_feature_extractor_during_finetune=False -> train all parameters")
 
         self.ft_run = wandb.init(name=self.wandb_runname+"_finetune", project=self.project_name) 
         ft_epochs = self.args.finetuning_epochs
