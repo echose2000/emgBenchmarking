@@ -132,15 +132,24 @@ class CNN_Trainer(Model_Trainer):
 
     def set_param_requires_grad(self):
         
-        num = 0
+        # Freeze all parameters first (backbone/feature extractor)
+        for param in self.model.parameters():
+            param.requires_grad = False
+        
+        # Unfreeze only FC/classifier layer
         for name, param in self.model.named_parameters():
-            num += 1
-            if (num > 0):
-            #if (num > 72): # for -3
-            #if (num > 33): # for -4
+            if 'fc' in name or 'head' in name.lower():
                 param.requires_grad = True
-            else:
-                param.requires_grad = False
+                print(f"Unfreezing: {name}")
+        
+        # Print parameter statistics
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"\n=== Model Parameter Statistics ===")
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters (FC only): {trainable_params:,}")
+        print(f"Frozen parameters (Backbone): {total_params - trainable_params:,}")
+        print(f"Trainable ratio: {trainable_params/total_params*100:.2f}%\n")
 
     def set_optimizer(self):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
