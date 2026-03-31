@@ -248,6 +248,7 @@ class CNN_Trainer(Model_Trainer):
         for epoch in tqdm(range(ft_epochs), desc="Finetuning Epoch"):
             self.model.train()
             train_loss = 0.0
+            fc_loss_window = []
             
             for ft_train_metric in ft_training_metrics:
                 ft_train_metric.reset()
@@ -269,7 +270,11 @@ class CNN_Trainer(Model_Trainer):
                     loss.backward()
                     self.optimizer.step()
 
-                    train_loss += loss.item()
+                    fc_loss_value = loss.item()
+                    train_loss += fc_loss_value
+                    fc_loss_window.append(fc_loss_value)
+                    if len(fc_loss_window) > 20:
+                        fc_loss_window.pop(0)
 
                     for ft_train_metric in ft_training_metrics:
                         ft_train_metric(output,Y_batch_long)
@@ -277,11 +282,22 @@ class CNN_Trainer(Model_Trainer):
                     if not self.args.force_regression: 
                         if t.n % 10 == 0:
                             ft_accuracy_metric = next(metric for metric in ft_training_metrics if metric.name =="Micro_Accuracy")
+                            fc_loss_ma20 = float(np.mean(fc_loss_window)) if len(fc_loss_window) > 0 else fc_loss_value
 
                             t.set_postfix({
-                                "Batch Loss": loss.item(), 
+                                "FC Loss": fc_loss_value,
+                                "FC Loss(MA20)": fc_loss_ma20,
                                 "Batch Acc": ft_accuracy_metric.compute().item()
                             })
+                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
+                    else:
+                        if t.n % 10 == 0:
+                            fc_loss_ma20 = float(np.mean(fc_loss_window)) if len(fc_loss_window) > 0 else fc_loss_value
+                            t.set_postfix({
+                                "FC Loss": fc_loss_value,
+                                "FC Loss(MA20)": fc_loss_ma20
+                            })
+                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
 
             # Finetuning Validation
             self.model.eval()
@@ -347,6 +363,7 @@ class CNN_Trainer(Model_Trainer):
 
             # Print metric values
             print(f"Finetuning Epoch {epoch+1}/{ft_epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+            print(f"Finetuning FC Loss Summary | Epoch Avg FC Loss: {train_loss:.6f}")
 
             ft_train_metrics_str = " | ".join(f"{name}: {value.item():.4f}" if name != 'R2Score_RawValues' else f"{name}: ({', '.join(f'{v.item():.4f}' for v in value)})" for name, value in ft_training_metrics_values.items())
             print(f"Train Metrics | {ft_train_metrics_str}")
