@@ -303,7 +303,8 @@ class CNN_Trainer(Model_Trainer):
                     loss.backward()
                     self.optimizer.step()
 
-                    fc_loss_value = loss.item()
+                    batch_loss_value = loss.item()
+                    fc_loss_value = batch_loss_value
                     train_loss += fc_loss_value
                     fc_loss_window.append(fc_loss_value)
                     if len(fc_loss_window) > 20:
@@ -318,19 +319,21 @@ class CNN_Trainer(Model_Trainer):
                             fc_loss_ma20 = float(np.mean(fc_loss_window)) if len(fc_loss_window) > 0 else fc_loss_value
 
                             t.set_postfix({
+                                "Batch Loss": batch_loss_value,
                                 "FC Loss": fc_loss_value,
                                 "FC Loss(MA20)": fc_loss_ma20,
                                 "Batch Acc": ft_accuracy_metric.compute().item()
                             })
-                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
+                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] batch_loss={batch_loss_value:.6f}, fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
                     else:
                         if t.n % 10 == 0:
                             fc_loss_ma20 = float(np.mean(fc_loss_window)) if len(fc_loss_window) > 0 else fc_loss_value
                             t.set_postfix({
+                                "Batch Loss": batch_loss_value,
                                 "FC Loss": fc_loss_value,
                                 "FC Loss(MA20)": fc_loss_ma20
                             })
-                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
+                            print(f"[FC][Epoch {epoch+1} Batch {t.n}] batch_loss={batch_loss_value:.6f}, fc_loss={fc_loss_value:.6f}, fc_loss_ma20={fc_loss_ma20:.6f}")
 
             # Finetuning Validation
             self.model.eval()
