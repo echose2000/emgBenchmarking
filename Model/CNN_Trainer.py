@@ -271,6 +271,8 @@ class CNN_Trainer(Model_Trainer):
         ft_epochs = self.args.finetuning_epochs
         finetune_dataset = super().CustomDataset(self.X.train_finetuning,self.Y.train_finetuning, transform=self.resize_transform)
         finetune_loader = DataLoader(finetune_dataset, batch_size=self.batch_size, shuffle=True, num_workers=multiprocessing.cpu_count()//8, worker_init_fn=self.utils.seed_worker, pin_memory=True, drop_last=self.args.force_regression)
+        print(f"[finetune] data shape X={tuple(self.X.train_finetuning.shape)}, Y={tuple(self.Y.train_finetuning.shape)}")
+        print(f"[finetune] dataset size={len(finetune_dataset)}, batch_size={self.batch_size}, num_batches={len(finetune_loader)}")
 
         # Initialize metrics for finetuning training and validation
         ft_training_metrics, ft_validation_metrics, ft_testing_metrics = super().get_metrics()

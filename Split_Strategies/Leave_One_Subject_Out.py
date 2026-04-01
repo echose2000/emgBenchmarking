@@ -18,6 +18,43 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+    def _duplicate_finetune_with_gaussian_noise(self, X_data, Y_data, label_data):
+        """
+        Duplicate finetune samples by adding Gaussian noise and concatenating to original data.
+        Only applies when augmentation is enabled and data is non-empty.
+        """
+        if not getattr(self.args, "augment_finetune_with_gaussian_noise", False):
+            return X_data, Y_data, label_data
+
+        if X_data is None or len(X_data) == 0:
+            return X_data, Y_data, label_data
+
+        noise_std = float(getattr(self.args, "finetune_gaussian_noise_std", 0.01))
+        if noise_std <= 0:
+            return X_data, Y_data, label_data
+
+        if isinstance(X_data, torch.Tensor):
+            X_float = X_data.to(torch.float32)
+            noise = torch.randn_like(X_float) * noise_std
+            X_noisy = (X_float + noise).to(X_data.dtype)
+            X_aug = torch.cat((X_data, X_noisy), dim=0)
+
+            Y_aug = torch.cat((Y_data, Y_data), dim=0)
+            label_aug = torch.cat((label_data, label_data), dim=0)
+        else:
+            X_np = np.asarray(X_data)
+            noise = np.random.normal(loc=0.0, scale=noise_std, size=X_np.shape).astype(np.float32)
+            X_noisy = (X_np.astype(np.float32) + noise).astype(X_np.dtype, copy=False)
+            X_aug = np.concatenate((X_np, X_noisy), axis=0)
+
+            Y_np = np.asarray(Y_data)
+            label_np = np.asarray(label_data)
+            Y_aug = np.concatenate((Y_np, Y_np), axis=0)
+            label_aug = np.concatenate((label_np, label_np), axis=0)
+
+        print(f"[finetune-augment] Gaussian noise applied (std={noise_std}). Finetune samples: {len(X_data)} -> {len(X_aug)}")
+        return X_aug, Y_aug, label_aug
+
     def split(self):
 
         self.train_from_non_left_out_subj()
@@ -245,6 +282,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                     self.concatenate_to_train(X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject)
             
                 else:
+                    X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_gaussian_noise(
+                        X_train_partial_leftout_subject,
+                        Y_train_partial_leftout_subject,
+                        label_train_partial_leftout_subject
+                    )
                     self.train_finetuning_from(X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject)
          
         else: # unlabeled domain adaptation
@@ -260,6 +302,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                     label_train_labeled_partial_leftout_subject = label_train_partial_leftout_subject
 
                 if self.args.pretrain_and_finetune:
+                    X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject = self._duplicate_finetune_with_gaussian_noise(
+                        X_train_labeled_partial_leftout_subject,
+                        Y_train_labeled_partial_leftout_subject,
+                        label_train_labeled_partial_leftout_subject
+                    )
                     self.train_finetuning_from(X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject)
 
                     self.train_finetuning_unlabeled_from(X_train_unlabeled_partial_leftout_subject, Y_train_unlabeled_partial_leftout_subject, label_train_unlabeled_partial_leftout_subject)
@@ -279,6 +326,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                         self.train_from_self_tensor()
                     
                     else: 
+                        X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_gaussian_noise(
+                            X_train_partial_leftout_subject,
+                            Y_train_partial_leftout_subject,
+                            label_train_partial_leftout_subject
+                        )
                         self.train_finetuning_from(X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject)
 
         # Update the validation data
