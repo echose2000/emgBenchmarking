@@ -140,6 +140,8 @@ class Setup():
         parser.add_argument('--augment_finetune_with_gaussian_noise', type=utils.str2bool, help='whether or not to duplicate finetune data by adding Gaussian noise to each channel. Set to True by default.', default=True)
         # Standard deviation for Gaussian noise used in finetune augmentation
         parser.add_argument('--finetune_gaussian_noise_std', type=float, help='standard deviation of Gaussian noise used for finetune augmentation. Set to 0.01 by default.', default=0.01)
+        # Optional: duplicate finetune data by cyclic channel shift (25% on the 128-channel axis)
+        parser.add_argument('--augment_finetune_with_channel_shift_25', type=utils.str2bool, help='whether or not to duplicate finetune data by cyclically shifting the channel axis by 25%. Set to False by default.', default=False)
         # Optional: load a local checkpoint before finetuning
         parser.add_argument('--finetune_from_checkpoint', type=str, help='path to local .pth checkpoint to load before finetuning. Set to empty by default.', default='')
         # Add argument for whether or not to turn on unlabeled domain adaptation
