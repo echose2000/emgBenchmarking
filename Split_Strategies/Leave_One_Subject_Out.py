@@ -94,6 +94,74 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
         )
         return X_aug, Y_aug, label_aug
 
+    def _duplicate_finetune_with_magnitude_warp(self, X_data, Y_data, label_data):
+        """
+        Duplicate finetune samples with smooth magnitude warping on the last axis.
+        For input shaped (N, 3, 128, 224), this applies a smooth length-224 curve
+        (mean normalized to 1) to each sample and broadcasts over channels.
+        """
+        if not getattr(self.args, "augment_finetune_with_magnitude_warp", False):
+            return X_data, Y_data, label_data
+
+        if X_data is None or len(X_data) == 0:
+            return X_data, Y_data, label_data
+
+        # Keep curve variance controlled: small random fluctuation, clipped range, then mean=1 normalization.
+        knot_count = 6
+        warp_std = 0.12
+        warp_min, warp_max = 0.8, 1.3
+        smooth_kernel = 9
+
+        if isinstance(X_data, torch.Tensor):
+            X_ref = X_data.detach().cpu().numpy()
+            is_torch = True
+        else:
+            X_ref = np.asarray(X_data)
+            is_torch = False
+
+        time_axis_len = int(X_ref.shape[-1])
+        sample_count = int(X_ref.shape[0])
+
+        knot_x = np.linspace(0, time_axis_len - 1, num=knot_count)
+        target_x = np.arange(time_axis_len)
+        knot_values = np.random.normal(loc=1.0, scale=warp_std, size=(sample_count, knot_count))
+        knot_values = np.clip(knot_values, warp_min, warp_max)
+
+        curves = np.stack([np.interp(target_x, knot_x, knot_values[i]) for i in range(sample_count)], axis=0)
+
+        if smooth_kernel > 1:
+            kernel = np.ones(smooth_kernel, dtype=np.float32) / float(smooth_kernel)
+            curves = np.stack([
+                np.convolve(curves[i], kernel, mode='same') for i in range(sample_count)
+            ], axis=0)
+
+        curves = curves / (np.mean(curves, axis=1, keepdims=True) + 1e-6)
+        curves = np.clip(curves, warp_min, warp_max).astype(np.float32)
+
+        broadcast_shape = (sample_count,) + (1,) * (X_ref.ndim - 2) + (time_axis_len,)
+        curves = curves.reshape(broadcast_shape)
+
+        X_warped_np = (X_ref.astype(np.float32) * curves).astype(X_ref.dtype, copy=False)
+
+        if is_torch:
+            X_warped = torch.from_numpy(X_warped_np).to(X_data.dtype)
+            X_aug = torch.cat((X_data, X_warped), dim=0)
+            Y_aug = torch.cat((Y_data, Y_data), dim=0)
+            label_aug = torch.cat((label_data, label_data), dim=0)
+        else:
+            X_aug = np.concatenate((X_ref, X_warped_np), axis=0)
+            Y_np = np.asarray(Y_data)
+            label_np = np.asarray(label_data)
+            Y_aug = np.concatenate((Y_np, Y_np), axis=0)
+            label_aug = np.concatenate((label_np, label_np), axis=0)
+
+        print(
+            f"[finetune-augment] Magnitude warp applied "
+            f"(time_axis={time_axis_len}, curve_mean~1.0, range=[{warp_min}, {warp_max}]). "
+            f"Finetune samples: {len(X_data)} -> {len(X_aug)}"
+        )
+        return X_aug, Y_aug, label_aug
+
     def split(self):
 
         self.train_from_non_left_out_subj()
@@ -331,6 +399,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                         Y_train_partial_leftout_subject,
                         label_train_partial_leftout_subject
                     )
+                    X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_magnitude_warp(
+                        X_train_partial_leftout_subject,
+                        Y_train_partial_leftout_subject,
+                        label_train_partial_leftout_subject
+                    )
                     self.train_finetuning_from(X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject)
          
         else: # unlabeled domain adaptation
@@ -352,6 +425,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                         label_train_labeled_partial_leftout_subject
                     )
                     X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject = self._duplicate_finetune_with_channel_shift_25(
+                        X_train_labeled_partial_leftout_subject,
+                        Y_train_labeled_partial_leftout_subject,
+                        label_train_labeled_partial_leftout_subject
+                    )
+                    X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject = self._duplicate_finetune_with_magnitude_warp(
                         X_train_labeled_partial_leftout_subject,
                         Y_train_labeled_partial_leftout_subject,
                         label_train_labeled_partial_leftout_subject
@@ -381,6 +459,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                             label_train_partial_leftout_subject
                         )
                         X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_channel_shift_25(
+                            X_train_partial_leftout_subject,
+                            Y_train_partial_leftout_subject,
+                            label_train_partial_leftout_subject
+                        )
+                        X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_magnitude_warp(
                             X_train_partial_leftout_subject,
                             Y_train_partial_leftout_subject,
                             label_train_partial_leftout_subject
