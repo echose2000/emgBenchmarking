@@ -416,11 +416,11 @@ class Model_Trainer():
             wandb_runname += '_one-subj-for-training-set'
         if self.args.pretrain_and_finetune:
             wandb_runname += '_pretrain-finetune'
-            wandb_runname += '_--augment_finetune_with_gaussian_noise-' + str(self.args.augment_finetune_with_gaussian_noise)
-            wandb_runname += '_--finetune_gaussian_noise_std' + str(self.args.finetune_gaussian_noise_std)
-            wandb_runname += '_--augment_finetune_with_channel_shift_25-' + str(self.args.augment_finetune_with_channel_shift_25)
-            wandb_runname += '_--augment_finetune_with_magnitude_warp-' + str(self.args.augment_finetune_with_magnitude_warp)
-            wandb_runname += '_--augment_finetune_with_wrap-' + str(self.args.augment_finetune_with_wrap)
+            g_flag = '1' if self.args.augment_finetune_with_gaussian_noise else '0'
+            c_flag = '1' if self.args.augment_finetune_with_channel_shift_25 else '0'
+            m_flag = '1' if self.args.augment_finetune_with_magnitude_warp else '0'
+            w_flag = '1' if self.args.augment_finetune_with_wrap else '0'
+            wandb_runname += f'_aug-G{g_flag}C{c_flag}M{m_flag}W{w_flag}'
         if self.args.turn_on_unlabeled_domain_adaptation:
             wandb_runname += '_unlabeled-adapt'
             wandb_runname += '-algo-' + self.args.unlabeled_algorithm
