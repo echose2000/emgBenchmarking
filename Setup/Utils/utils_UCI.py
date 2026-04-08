@@ -828,7 +828,7 @@ def plot_confusion_matrix(true, pred, gesture_labels, testrun_foldername, args, 
     sn.heatmap(df_cm, annot=True, fmt=".0%", square=True)
     confusionMatrix_filename = f'{testrun_foldername}confusionMatrix_{partition_name}_seed{args.seed}_{formatted_datetime}.png'
     plt.savefig(confusionMatrix_filename)
-    df_cm_unnormalized.to_pickle(f'{testrun_foldername}confusionMatrix_{partition_name}_seed{args.seed}_{formatted_datetime}.pkl')
+    df_cm_unnormalized.to_pickle(f'{testrun_foldername}{f"subj{args.leftout_subject}_" if partition_name == "test" else ""}confusionMatrix_{partition_name}_seed{args.seed}_{formatted_datetime}.pkl')
     wandb.log({f"{partition_name} Confusion Matrix": wandb.Image(confusionMatrix_filename),
                 f"Raw {partition_name.capitalize()} Confusion Matrix": wandb.Table(dataframe=df_cm_unnormalized)})
     
