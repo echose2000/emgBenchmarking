@@ -144,6 +144,8 @@ class Setup():
         parser.add_argument('--augment_finetune_with_channel_shift_25', type=utils.str2bool, help='whether or not to duplicate finetune data by cyclically shifting the channel axis by 25%. Set to False by default.', default=False)
         # Optional: duplicate finetune data with magnitude warping along the 224-length axis
         parser.add_argument('--augment_finetune_with_magnitude_warp', type=utils.str2bool, help='whether or not to duplicate finetune data by applying smooth magnitude warping on the last axis. Set to False by default.', default=False)
+        # Optional: duplicate finetune data with wrap augmentation (time warp + resize back)
+        parser.add_argument('--augment_finetune_with_wrap', type=utils.str2bool, help='whether or not to duplicate finetune data by applying seeded wrap augmentation with factor in [0.9, 1.1]. Set to False by default.', default=False)
         # Optional: load a local checkpoint before finetuning
         parser.add_argument('--finetune_from_checkpoint', type=str, help='path to local .pth checkpoint to load before finetuning. Set to empty by default.', default='')
         # Add argument for whether or not to turn on unlabeled domain adaptation

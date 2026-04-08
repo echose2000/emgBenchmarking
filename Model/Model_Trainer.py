@@ -420,6 +420,7 @@ class Model_Trainer():
             wandb_runname += '_--finetune_gaussian_noise_std' + str(self.args.finetune_gaussian_noise_std)
             wandb_runname += '_--augment_finetune_with_channel_shift_25-' + str(self.args.augment_finetune_with_channel_shift_25)
             wandb_runname += '_--augment_finetune_with_magnitude_warp-' + str(self.args.augment_finetune_with_magnitude_warp)
+            wandb_runname += '_--augment_finetune_with_wrap-' + str(self.args.augment_finetune_with_wrap)
         if self.args.turn_on_unlabeled_domain_adaptation:
             wandb_runname += '_unlabeled-adapt'
             wandb_runname += '-algo-' + self.args.unlabeled_algorithm

@@ -17,6 +17,7 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
             torch.cuda.manual_seed_all(self.args.seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        self.wrap_rng = np.random.default_rng(self.args.seed)
 
     def _duplicate_finetune_with_gaussian_noise(self, X_data, Y_data, label_data):
         """
@@ -159,6 +160,74 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
             f"[finetune-augment] Magnitude warp applied "
             f"(time_axis={time_axis_len}, curve_mean~1.0, range=[{warp_min}, {warp_max}]). "
             f"Finetune samples: {len(X_data)} -> {len(X_aug)}"
+        )
+        return X_aug, Y_aug, label_aug
+
+    def _duplicate_finetune_with_wrap(self, X_data, Y_data, label_data):
+        """
+        Duplicate finetune samples by seeded wrap augmentation.
+        For each trial, sample a single factor in [0.9, 1.1], apply the same factor to
+        all channels of that trial, then resize back to the original length on last axis.
+        """
+        if not getattr(self.args, "augment_finetune_with_wrap", False):
+            return X_data, Y_data, label_data
+
+        if X_data is None or len(X_data) == 0:
+            return X_data, Y_data, label_data
+
+        if isinstance(X_data, torch.Tensor):
+            X_ref = X_data.detach().cpu().numpy()
+            is_torch = True
+        else:
+            X_ref = np.asarray(X_data)
+            is_torch = False
+
+        X_float = X_ref.astype(np.float32)
+        sample_count = int(X_float.shape[0])
+        time_len = int(X_float.shape[-1])
+        X_wrap = np.empty_like(X_float, dtype=np.float32)
+
+        factors = []
+        for i in range(sample_count):
+            factor = float(self.wrap_rng.uniform(0.9, 1.1))
+            factors.append(factor)
+
+            warped_len = max(2, int(round(time_len * factor)))
+            src = X_float[i].reshape(-1, time_len)
+
+            # Step 1: warp with factor (change temporal density)
+            x_warp = np.linspace(0, time_len - 1, num=warped_len, dtype=np.float32)
+            x_orig = np.arange(time_len, dtype=np.float32)
+            warped = np.stack([
+                np.interp(x_warp, x_orig, channel) for channel in src
+            ], axis=0)
+
+            # Step 2: resize warped signal back to original length
+            x_back = np.linspace(0, warped_len - 1, num=time_len, dtype=np.float32)
+            x_warp_idx = np.arange(warped_len, dtype=np.float32)
+            restored = np.stack([
+                np.interp(x_back, x_warp_idx, channel) for channel in warped
+            ], axis=0)
+
+            X_wrap[i] = restored.reshape(X_float[i].shape)
+
+        X_wrap = X_wrap.astype(X_ref.dtype, copy=False)
+
+        if is_torch:
+            X_wrap_t = torch.from_numpy(X_wrap).to(X_data.dtype)
+            X_aug = torch.cat((X_data, X_wrap_t), dim=0)
+            Y_aug = torch.cat((Y_data, Y_data), dim=0)
+            label_aug = torch.cat((label_data, label_data), dim=0)
+        else:
+            X_aug = np.concatenate((X_ref, X_wrap), axis=0)
+            Y_np = np.asarray(Y_data)
+            label_np = np.asarray(label_data)
+            Y_aug = np.concatenate((Y_np, Y_np), axis=0)
+            label_aug = np.concatenate((label_np, label_np), axis=0)
+
+        print(
+            f"[finetune-augment] Wrap applied (factor in [0.9, 1.1], seeded). "
+            f"factor_mean={np.mean(factors):.4f}. Finetune samples: {len(X_data)} -> {len(X_aug)}"
         )
         return X_aug, Y_aug, label_aug
 
@@ -404,6 +473,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                         Y_train_partial_leftout_subject,
                         label_train_partial_leftout_subject
                     )
+                    X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_wrap(
+                        X_train_partial_leftout_subject,
+                        Y_train_partial_leftout_subject,
+                        label_train_partial_leftout_subject
+                    )
                     self.train_finetuning_from(X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject)
          
         else: # unlabeled domain adaptation
@@ -430,6 +504,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                         label_train_labeled_partial_leftout_subject
                     )
                     X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject = self._duplicate_finetune_with_magnitude_warp(
+                        X_train_labeled_partial_leftout_subject,
+                        Y_train_labeled_partial_leftout_subject,
+                        label_train_labeled_partial_leftout_subject
+                    )
+                    X_train_labeled_partial_leftout_subject, Y_train_labeled_partial_leftout_subject, label_train_labeled_partial_leftout_subject = self._duplicate_finetune_with_wrap(
                         X_train_labeled_partial_leftout_subject,
                         Y_train_labeled_partial_leftout_subject,
                         label_train_labeled_partial_leftout_subject
@@ -464,6 +543,11 @@ class Leave_One_Subject_Out(Data_Split_Strategy):
                             label_train_partial_leftout_subject
                         )
                         X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_magnitude_warp(
+                            X_train_partial_leftout_subject,
+                            Y_train_partial_leftout_subject,
+                            label_train_partial_leftout_subject
+                        )
+                        X_train_partial_leftout_subject, Y_train_partial_leftout_subject, label_train_partial_leftout_subject = self._duplicate_finetune_with_wrap(
                             X_train_partial_leftout_subject,
                             Y_train_partial_leftout_subject,
                             label_train_partial_leftout_subject
